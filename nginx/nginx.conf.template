@@ -1,31 +1,71 @@
+load_module /usr/lib/nginx/modules/ngx_http_dav_ext_module.so;
+
 worker_processes auto;
+
+error_log /var/log/nginx/error.log warn;
+pid /run/nginx.pid;
+
 
 events {
     worker_connections 2048;
+    multi_accept on;
 }
 
+
 http {
+
+    # =========================================================
+    # BASIC CONFIGURATION
+    # =========================================================
 
     include /etc/nginx/mime.types;
 
     default_type application/octet-stream;
 
+    charset utf-8;
+
     sendfile on;
     tcp_nopush on;
+    tcp_nodelay on;
 
     keepalive_timeout 65;
+    keepalive_requests 1000;
 
     server_tokens off;
 
+
+    # =========================================================
+    # REQUEST / UPLOAD LIMITS
+    # =========================================================
+
     client_max_body_size 20M;
+
     client_body_timeout 120s;
     client_header_timeout 30s;
+
     send_timeout 120s;
 
 
-    # =====================================================
+    # =========================================================
+    # TEMPORARY FILE LOCATIONS
+    # =========================================================
+
+    client_body_temp_path /tmp/nginx_upload;
+
+
+    # =========================================================
     # API KEY VALIDATION
-    # =====================================================
+    #
+    # API_KEY comes from .env
+    #
+    # Example:
+    #
+    # API_KEY=your-long-secret
+    #
+    # Client must send:
+    #
+    # X-API-Key: your-long-secret
+    # =========================================================
 
     map $http_x_api_key $api_key_valid {
 
@@ -35,6 +75,24 @@ http {
     }
 
 
+    # =========================================================
+    # MIME / SECURITY
+    # =========================================================
+
+    map $request_method $is_write_method {
+
+        default 0;
+
+        PUT 1;
+        DELETE 1;
+        MKCOL 1;
+    }
+
+
+    # =========================================================
+    # SERVER
+    # =========================================================
+
     server {
 
         listen 80;
@@ -42,9 +100,14 @@ http {
         server_name _;
 
 
-        # =================================================
+        # =====================================================
         # HEALTH CHECK
-        # =================================================
+        #
+        # GET /health
+        #
+        # Response:
+        # {"status":"ok"}
+        # =====================================================
 
         location = /health {
 
@@ -52,32 +115,85 @@ http {
 
             default_type application/json;
 
-            add_header Cache-Control "no-store" always;
-
-            return 200 '{"status":"ok"}';
-        }
-
-
-        # =================================================
-        # PUBLIC FILES
-        #
-        # /erms/uploads/...
-        # =================================================
-
-        location /${PROJECT_FOLDER}/uploads/ {
-
-            alias /data/uploads/${PROJECT_FOLDER}/uploads/;
-
-            autoindex off;
-
-            limit_except GET HEAD {
-                deny all;
-            }
+            add_header
+                Cache-Control
+                "no-store, no-cache, must-revalidate"
+                always;
 
             add_header
                 X-Content-Type-Options
                 "nosniff"
                 always;
+
+            return 200 '{"status":"ok"}';
+        }
+
+
+        # =====================================================
+        # PUBLIC FILE ACCESS
+        #
+        # PROJECT_FOLDER comes from .env
+        #
+        # PROJECT_FOLDER=erms
+        #
+        # URL:
+        #
+        # /erms/uploads/filename.jpg
+        #
+        # Physical:
+        #
+        # /data/uploads/erms/uploads/filename.jpg
+        # =====================================================
+
+        location /${PROJECT_FOLDER}/uploads/ {
+
+            alias
+                /data/uploads/${PROJECT_FOLDER}/uploads/;
+
+
+            # -------------------------------------------------
+            # DO NOT SHOW DIRECTORY LISTING
+            # -------------------------------------------------
+
+            autoindex off;
+
+
+            # -------------------------------------------------
+            # READ ONLY
+            # -------------------------------------------------
+
+            limit_except GET HEAD {
+
+                deny all;
+            }
+
+
+            # -------------------------------------------------
+            # SECURITY HEADERS
+            # -------------------------------------------------
+
+            add_header
+                X-Content-Type-Options
+                "nosniff"
+                always;
+
+            add_header
+                X-Frame-Options
+                "SAMEORIGIN"
+                always;
+
+            add_header
+                Referrer-Policy
+                "no-referrer"
+                always;
+
+
+            # -------------------------------------------------
+            # CACHE
+            #
+            # Files use UUID filenames, therefore immutable
+            # caching is safe.
+            # -------------------------------------------------
 
             add_header
                 Cache-Control
@@ -86,53 +202,109 @@ http {
         }
 
 
-        # =================================================
-        # UPLOAD
+        # =====================================================
+        # UPLOAD / DELETE ENDPOINT
         #
-        # /erms/upload/...
-        # =================================================
+        # PROJECT_FOLDER comes from .env
+        #
+        # Example:
+        #
+        # PUT
+        # /erms/upload/employees/100001/profile/photo.jpg
+        #
+        # Physical:
+        #
+        # /data/uploads/erms/uploads/
+        # employees/100001/profile/photo.jpg
+        # =====================================================
 
         location /${PROJECT_FOLDER}/upload/ {
 
-            alias /data/uploads/${PROJECT_FOLDER}/uploads/;
+            alias
+                /data/uploads/${PROJECT_FOLDER}/uploads/;
 
-            # ---------------------------------------------
+
+            # -------------------------------------------------
             # API KEY
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             if ($api_key_valid = 0) {
+
+                add_header
+                    WWW-Authenticate
+                    'ApiKey realm="Upload Server"'
+                    always;
+
                 return 401;
             }
 
 
-            # ---------------------------------------------
-            # UPLOAD SETTINGS
-            # ---------------------------------------------
+            # -------------------------------------------------
+            # BODY SIZE
+            # -------------------------------------------------
 
             client_max_body_size 20M;
 
+
+            # -------------------------------------------------
+            # TIMEOUT
+            # -------------------------------------------------
+
             client_body_timeout 120s;
 
-            client_body_temp_path /tmp/nginx_upload;
+
+            # -------------------------------------------------
+            # TEMPORARY UPLOAD LOCATION
+            # -------------------------------------------------
+
+            client_body_temp_path
+                /tmp/nginx_upload;
 
 
-            # ---------------------------------------------
+            # -------------------------------------------------
             # WEBDAV
-            # ---------------------------------------------
+            #
+            # PUT    = upload / replace
+            # DELETE = delete
+            # MKCOL  = create directory
+            # -------------------------------------------------
 
-            dav_methods PUT DELETE MKCOL;
+            dav_methods
+                PUT
+                DELETE
+                MKCOL;
+
+
+            # -------------------------------------------------
+            # CREATE FULL DIRECTORY PATH
+            #
+            # Example:
+            #
+            # /employees/100001/profile/photo.jpg
+            #
+            # Nginx creates:
+            #
+            # employees/
+            # employees/100001/
+            # employees/100001/profile/
+            # -------------------------------------------------
+
+            create_full_put_path on;
+
+
+            # -------------------------------------------------
+            # FILE PERMISSIONS
+            # -------------------------------------------------
 
             dav_access
                 user:rw
                 group:rw
                 all:r;
 
-            create_full_put_path on;
 
-
-            # ---------------------------------------------
-            # SECURITY
-            # ---------------------------------------------
+            # -------------------------------------------------
+            # SECURITY HEADERS
+            # -------------------------------------------------
 
             add_header
                 X-Content-Type-Options
@@ -144,15 +316,31 @@ http {
                 "no-store"
                 always;
 
+            add_header
+                X-Frame-Options
+                "DENY"
+                always;
+
+
+            # -------------------------------------------------
+            # NO DIRECTORY LISTING
+            # -------------------------------------------------
+
             autoindex off;
         }
 
 
-        # =================================================
-        # BLOCK EVERYTHING ELSE
-        # =================================================
+        # =====================================================
+        # BLOCK WEBDAV OUTSIDE UPLOAD ENDPOINT
+        # =====================================================
 
         location / {
+
+            if ($is_write_method = 1) {
+
+                return 405;
+            }
+
             return 404;
         }
     }
