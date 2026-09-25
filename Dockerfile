@@ -1,7 +1,3 @@
-# ============================================================
-# BUILD DAV MODULE
-# ============================================================
-
 FROM nginx:1.29.1-alpine AS builder
 
 RUN apk add --no-cache \
@@ -18,29 +14,14 @@ RUN apk add --no-cache \
 
 WORKDIR /build
 
-
-# ============================================================
-# DOWNLOAD EXACT NGINX SOURCE VERSION
-# ============================================================
-
 RUN wget -q \
     https://nginx.org/download/nginx-1.29.1.tar.gz \
     && tar -xzf nginx-1.29.1.tar.gz
-
-
-# ============================================================
-# DOWNLOAD DAV EXT MODULE
-# ============================================================
 
 RUN git clone \
     --depth 1 \
     https://github.com/arut/nginx-dav-ext-module.git \
     /build/nginx-dav-ext-module
-
-
-# ============================================================
-# BUILD MODULE
-# ============================================================
 
 WORKDIR /build/nginx-1.29.1
 
@@ -50,10 +31,6 @@ RUN ./configure \
     && make modules
 
 
-# ============================================================
-# PRODUCTION RUNTIME
-# ============================================================
-
 FROM nginx:1.29.1-alpine
 
 RUN mkdir -p \
@@ -62,33 +39,13 @@ RUN mkdir -p \
     /var/log/nginx \
     /run
 
-
-# ============================================================
-# COPY DAV MODULE
-# ============================================================
-
 COPY --from=builder \
     /build/nginx-1.29.1/objs/ngx_http_dav_ext_module.so \
     /usr/lib/nginx/modules/ngx_http_dav_ext_module.so
 
-
-# ============================================================
-# NGINX CONFIG
-# ============================================================
-
 COPY nginx/nginx.conf.template \
-    /etc/nginx/templates/default.conf.template
-
-
-# ============================================================
-# PORT
-# ============================================================
+    /etc/nginx/nginx.conf
 
 EXPOSE 80
-
-
-# ============================================================
-# START NGINX
-# ============================================================
 
 CMD ["nginx", "-g", "daemon off;"]
