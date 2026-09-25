@@ -11,16 +11,11 @@ http {
     default_type application/octet-stream;
 
     sendfile on;
-
     tcp_nopush on;
 
     keepalive_timeout 65;
 
     server_tokens off;
-
-    # --------------------------------------------------
-    # SECURITY / UPLOAD LIMIT
-    # --------------------------------------------------
 
     client_max_body_size 20M;
 
@@ -31,15 +26,9 @@ http {
     send_timeout 120s;
 
 
-    # --------------------------------------------------
-    # API KEY VALIDATION
-    #
-    # API key comes from:
-    #
-    # .env
-    #
-    # API_KEY=...
-    # --------------------------------------------------
+    # ==================================================
+    # API KEY
+    # ==================================================
 
     map $http_x_api_key $api_key_valid {
 
@@ -49,6 +38,10 @@ http {
     }
 
 
+    # ==================================================
+    # SERVER
+    # ==================================================
+
     server {
 
         listen 80;
@@ -57,7 +50,7 @@ http {
 
 
         # ==================================================
-        # HEALTH CHECK
+        # HEALTH
         # ==================================================
 
         location = /health {
@@ -68,21 +61,18 @@ http {
 
             add_header
                 Cache-Control
-                "no-store";
+                "no-store"
+                always;
 
             return 200
-                '{"status":"ok","service":"nginx-upload"}';
+                '{"status":"ok"}';
         }
 
 
         # ==================================================
-        # PUBLIC FILE ACCESS
+        # PUBLIC FILES
         #
-        # Example:
-        #
-        # https://files.yourdomain.com/erms/uploads/
-        #
-        # PROJECT_FOLDER comes from .env
+        # https://domain.com/erms/uploads/...
         # ==================================================
 
         location /${PROJECT_FOLDER}/uploads/ {
@@ -110,17 +100,13 @@ http {
 
 
         # ==================================================
-        # UPLOAD / DELETE
+        # UPLOAD
         #
-        # PUT:
+        # PUT
+        # DELETE
+        # MKCOL
         #
-        # /erms/upload/employees/100001/profile/photo.jpg
-        #
-        # Physical:
-        #
-        # /data/uploads/erms/uploads/employees/100001/profile/photo.jpg
-        #
-        # PROJECT_FOLDER comes from .env
+        # https://domain.com/erms/upload/...
         # ==================================================
 
         location /${PROJECT_FOLDER}/upload/ {
@@ -135,11 +121,6 @@ http {
 
             if ($api_key_valid = 0) {
 
-                add_header
-                    WWW-Authenticate
-                    'ApiKey realm="Upload Server"'
-                    always;
-
                 return 401;
             }
 
@@ -150,25 +131,20 @@ http {
 
             client_max_body_size 20M;
 
-
-            # ----------------------------------------------
-            # TEMPORARY UPLOAD DIRECTORY
-            # ----------------------------------------------
+            client_body_timeout 120s;
 
             client_body_temp_path
                 /tmp/nginx_upload;
 
 
             # ----------------------------------------------
-            # WEBDAV METHODS
+            # WEBDAV
             # ----------------------------------------------
 
             dav_methods
                 PUT
                 DELETE
-                MKCOL
-                COPY
-                MOVE;
+                MKCOL;
 
 
             dav_access
@@ -181,22 +157,7 @@ http {
 
 
             # ----------------------------------------------
-            # ONLY ALLOW FILE OPERATIONS
-            # ----------------------------------------------
-
-            limit_except
-                PUT
-                DELETE
-                MKCOL
-                COPY
-                MOVE {
-
-                deny all;
-            }
-
-
-            # ----------------------------------------------
-            # SECURITY HEADERS
+            # SECURITY
             # ----------------------------------------------
 
             add_header
@@ -210,16 +171,12 @@ http {
                 always;
 
 
-            # ----------------------------------------------
-            # NO DIRECTORY LISTING
-            # ----------------------------------------------
-
             autoindex off;
         }
 
 
         # ==================================================
-        # BLOCK EVERYTHING ELSE
+        # EVERYTHING ELSE
         # ==================================================
 
         location / {

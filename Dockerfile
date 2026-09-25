@@ -16,10 +16,12 @@ RUN apk add --no-cache \
 
 WORKDIR /build
 
+# Download Nginx
 RUN wget -q \
     https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz \
     && tar -xzf nginx-${NGINX_VERSION}.tar.gz
 
+# Download DAV extension
 RUN git clone \
     --depth 1 \
     --branch v${DAV_EXT_VERSION} \
@@ -38,15 +40,28 @@ RUN ./configure \
     --http-fastcgi-temp-path=/tmp/fastcgi_temp \
     --http-uwsgi-temp-path=/tmp/uwsgi_temp \
     --http-scgi-temp-path=/tmp/scgi_temp \
+    --with-pcre-jit \
     --with-http_ssl_module \
     --with-http_v2_module \
     --with-http_realip_module \
     --with-http_gzip_static_module \
     --with-http_stub_status_module \
+    --without-http_xslt_module \
+    --without-http_geo_module \
+    --without-http_autoindex_module \
+    --without-http_browser_module \
+    --without-http_empty_gif_module \
+    --without-http_memcached_module \
+    --without-http_scgi_module \
+    --without-http_uwsgi_module \
     --add-module=/build/nginx-dav-ext-module \
     && make -j$(getconf _NPROCESSORS_ONLN) \
     && make install
 
+
+# ============================================================
+# PRODUCTION RUNTIME
+# ============================================================
 
 FROM alpine:3.22
 
@@ -58,6 +73,11 @@ RUN apk add --no-cache \
 RUN mkdir -p \
     /data/uploads \
     /tmp/nginx_upload \
+    /tmp/client_temp \
+    /tmp/proxy_temp \
+    /tmp/fastcgi_temp \
+    /tmp/uwsgi_temp \
+    /tmp/scgi_temp \
     /var/log/nginx \
     /var/cache/nginx \
     /run
