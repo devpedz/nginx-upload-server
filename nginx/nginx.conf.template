@@ -18,17 +18,14 @@ http {
     server_tokens off;
 
     client_max_body_size 20M;
-
     client_body_timeout 120s;
-
     client_header_timeout 30s;
-
     send_timeout 120s;
 
 
-    # ==================================================
-    # API KEY
-    # ==================================================
+    # =====================================================
+    # API KEY VALIDATION
+    # =====================================================
 
     map $http_x_api_key $api_key_valid {
 
@@ -38,10 +35,6 @@ http {
     }
 
 
-    # ==================================================
-    # SERVER
-    # ==================================================
-
     server {
 
         listen 80;
@@ -49,9 +42,9 @@ http {
         server_name _;
 
 
-        # ==================================================
-        # HEALTH
-        # ==================================================
+        # =================================================
+        # HEALTH CHECK
+        # =================================================
 
         location = /health {
 
@@ -59,31 +52,25 @@ http {
 
             default_type application/json;
 
-            add_header
-                Cache-Control
-                "no-store"
-                always;
+            add_header Cache-Control "no-store" always;
 
-            return 200
-                '{"status":"ok"}';
+            return 200 '{"status":"ok"}';
         }
 
 
-        # ==================================================
+        # =================================================
         # PUBLIC FILES
         #
-        # https://domain.com/erms/uploads/...
-        # ==================================================
+        # /erms/uploads/...
+        # =================================================
 
         location /${PROJECT_FOLDER}/uploads/ {
 
-            alias
-                /data/uploads/${PROJECT_FOLDER}/uploads/;
+            alias /data/uploads/${PROJECT_FOLDER}/uploads/;
 
             autoindex off;
 
             limit_except GET HEAD {
-
                 deny all;
             }
 
@@ -99,66 +86,53 @@ http {
         }
 
 
-        # ==================================================
+        # =================================================
         # UPLOAD
         #
-        # PUT
-        # DELETE
-        # MKCOL
-        #
-        # https://domain.com/erms/upload/...
-        # ==================================================
+        # /erms/upload/...
+        # =================================================
 
         location /${PROJECT_FOLDER}/upload/ {
 
-            alias
-                /data/uploads/${PROJECT_FOLDER}/uploads/;
+            alias /data/uploads/${PROJECT_FOLDER}/uploads/;
 
-
-            # ----------------------------------------------
+            # ---------------------------------------------
             # API KEY
-            # ----------------------------------------------
+            # ---------------------------------------------
 
             if ($api_key_valid = 0) {
-
                 return 401;
             }
 
 
-            # ----------------------------------------------
-            # UPLOAD LIMIT
-            # ----------------------------------------------
+            # ---------------------------------------------
+            # UPLOAD SETTINGS
+            # ---------------------------------------------
 
             client_max_body_size 20M;
 
             client_body_timeout 120s;
 
-            client_body_temp_path
-                /tmp/nginx_upload;
+            client_body_temp_path /tmp/nginx_upload;
 
 
-            # ----------------------------------------------
+            # ---------------------------------------------
             # WEBDAV
-            # ----------------------------------------------
+            # ---------------------------------------------
 
-            dav_methods
-                PUT
-                DELETE
-                MKCOL;
-
+            dav_methods PUT DELETE MKCOL;
 
             dav_access
                 user:rw
                 group:rw
                 all:r;
 
-
             create_full_put_path on;
 
 
-            # ----------------------------------------------
+            # ---------------------------------------------
             # SECURITY
-            # ----------------------------------------------
+            # ---------------------------------------------
 
             add_header
                 X-Content-Type-Options
@@ -170,17 +144,15 @@ http {
                 "no-store"
                 always;
 
-
             autoindex off;
         }
 
 
-        # ==================================================
-        # EVERYTHING ELSE
-        # ==================================================
+        # =================================================
+        # BLOCK EVERYTHING ELSE
+        # =================================================
 
         location / {
-
             return 404;
         }
     }
