@@ -1,3 +1,7 @@
+# ============================================================
+# BUILD DAV MODULE
+# ============================================================
+
 FROM nginx:1.29.1-alpine AS builder
 
 RUN apk add --no-cache \
@@ -31,6 +35,10 @@ RUN ./configure \
     && make modules
 
 
+# ============================================================
+# PRODUCTION RUNTIME
+# ============================================================
+
 FROM nginx:1.29.1-alpine
 
 RUN mkdir -p \
@@ -39,12 +47,18 @@ RUN mkdir -p \
     /var/log/nginx \
     /run
 
+# DAV extension
 COPY --from=builder \
     /build/nginx-1.29.1/objs/ngx_http_dav_ext_module.so \
     /usr/lib/nginx/modules/ngx_http_dav_ext_module.so
 
-COPY nginx/nginx.conf.template \
+# Main nginx configuration
+COPY nginx/nginx.conf \
     /etc/nginx/nginx.conf
+
+# Environment-variable template
+COPY nginx/conf.d/default.conf.template \
+    /etc/nginx/templates/default.conf.template
 
 EXPOSE 80
 

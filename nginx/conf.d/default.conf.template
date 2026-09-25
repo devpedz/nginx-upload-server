@@ -1,0 +1,145 @@
+map $http_x_api_key $api_key_valid {
+    default 0;
+    "${API_KEY}" 1;
+}
+
+map $request_method $is_write_method {
+    default 0;
+    PUT 1;
+    DELETE 1;
+    MKCOL 1;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    # =====================================================
+    # HEALTH CHECK
+    # =====================================================
+
+    location = /health {
+        access_log off;
+
+        default_type application/json;
+
+        add_header
+            Cache-Control
+            "no-store, no-cache, must-revalidate"
+            always;
+
+        add_header
+            X-Content-Type-Options
+            "nosniff"
+            always;
+
+        return 200 '{"status":"ok"}';
+    }
+
+    # =====================================================
+    # PUBLIC FILE ACCESS
+    # GET /erms/uploads/filename.jpg
+    # =====================================================
+
+    location /${PROJECT_FOLDER}/uploads/ {
+
+        alias /data/uploads/${PROJECT_FOLDER}/uploads/;
+
+        autoindex off;
+
+        limit_except GET HEAD {
+            deny all;
+        }
+
+        add_header
+            X-Content-Type-Options
+            "nosniff"
+            always;
+
+        add_header
+            X-Frame-Options
+            "SAMEORIGIN"
+            always;
+
+        add_header
+            Referrer-Policy
+            "no-referrer"
+            always;
+
+        add_header
+            Cache-Control
+            "public, max-age=2592000, immutable"
+            always;
+    }
+
+    # =====================================================
+    # AUTHENTICATED UPLOAD / DELETE
+    #
+    # PUT    /erms/upload/path/file.jpg
+    # DELETE /erms/upload/path/file.jpg
+    # MKCOL  /erms/upload/path/
+    # =====================================================
+
+    location /${PROJECT_FOLDER}/upload/ {
+
+        alias /data/uploads/${PROJECT_FOLDER}/uploads/;
+
+        # API KEY
+        if ($api_key_valid = 0) {
+            add_header
+                WWW-Authenticate
+                'ApiKey realm="Upload Server"'
+                always;
+
+            return 401;
+        }
+
+        client_max_body_size 20M;
+
+        client_body_timeout 120s;
+
+        client_body_temp_path /tmp/nginx_upload;
+
+        dav_methods
+            PUT
+            DELETE
+            MKCOL;
+
+        create_full_put_path on;
+
+        dav_access
+            user:rw
+            group:rw
+            all:r;
+
+        autoindex off;
+
+        add_header
+            X-Content-Type-Options
+            "nosniff"
+            always;
+
+        add_header
+            Cache-Control
+            "no-store"
+            always;
+
+        add_header
+            X-Frame-Options
+            "DENY"
+            always;
+    }
+
+    # =====================================================
+    # BLOCK EVERYTHING ELSE
+    # =====================================================
+
+    location / {
+
+        if ($is_write_method = 1) {
+            return 405;
+        }
+
+        return 404;
+    }
+}
